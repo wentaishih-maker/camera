@@ -39,7 +39,7 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'Bad Request', message: '缺少 model 或 payload 參數' });
     }
 
-    // 6. 構建 Google API URL (確保路徑正確)
+    // 6. 構建 Google API URL (確保變數名稱與上方定義的 apiKey 一致)
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     try {
@@ -55,7 +55,7 @@ export default async function handler(req, res) {
 
         const data = await googleResponse.json();
 
-        // 8. 針對非 200 的回應進行詳細解析 (這能幫你解決 403 到底是金鑰錯還是地區錯)
+        // 8. 針對非 200 的回應進行詳細解析
         if (!googleResponse.ok) {
             console.error(`Google API 回報錯誤 (${googleResponse.status}):`, JSON.stringify(data));
             return res.status(googleResponse.status).json({
