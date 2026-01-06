@@ -165,7 +165,7 @@
                 setLoading(true);
                 setError(null);
                 try {
-                    const data = await callGemini('gemini-2.5-flash-preview-09-2025', {
+                    const data = await callGemini('gemini-1.5-flash-preview-09-2025', {
                         contents: [{
                             parts: [
                                 { inlineData: { mimeType: "image/png", data: base64Image } },
@@ -193,7 +193,7 @@
                 try {
                     const forcedPrompt = `TASK: RE-COMPOSE AND TRANSFORM THIS IMAGE. CROP, ROTATE, AND FOLLOW RULE OF THIRDS. INSTRUCTIONS: ${analysis.guide.join(" ")}. STYLE: ${analysis.prompt}. Output modified image only.`;
                     
-                    const result = await callGemini('gemini-2.5-flash-image-preview', {
+                    const result = await callGemini('gemini-1.5-flash-image-preview', {
                         contents: [{
                             parts: [
                                 { inlineData: { mimeType: "image/png", data: base64Image } },
