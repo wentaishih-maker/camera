@@ -31,7 +31,7 @@
         const { useState, useRef, useEffect } = React;
 
         // API 金鑰由後端或環境變數注入，此處保持為空
-        const API_KEY = ""; 
+        const apiKey = ""; 
 
         const COMPOSITION_METHODS = [
             "中心構圖法", "井字構圖法", "對稱構圖法", "框架構圖法", "引導線構圖法", "前景構圖法", 
@@ -107,7 +107,7 @@
 視覺處理指令：(英文描述)`;
 
             const callGemini = async (model, payload, retryCount = 0) => {
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`;
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
                 try {
                     const response = await fetch(url, {
                         method: 'POST',
