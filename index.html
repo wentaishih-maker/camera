@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>攝影構圖大施：極端張力版</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap');
+        body {
+            font-family: 'Noto Sans TC', "Microsoft JhengHei", sans-serif;
+            background-color: #0a0a0a;
+        }
+        .animate-spin-slow {
+            animation: spin 3s linear infinite;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useRef, useEffect } = React;
+
+        // API 金鑰由後端或環境變數注入，此處保持為空
+        const API_KEY = ""; 
+
+        const COMPOSITION_METHODS = [
+            "中心構圖法", "井字構圖法", "對稱構圖法", "框架構圖法", "引導線構圖法", "前景構圖法", 
+            "留白構圖法", "對角線構圖法", "S型曲線構圖法", "重複圖案構圖法", "切邊構圖法", 
+            "填充式構圖", "對稱平衡構圖法", "對角線平衡構圖法", "物體大小平衡構圖法", 
+            "色彩平衡構圖法", "色調(明暗)平衡構圖法"
+        ];
+
+        // 修正後的 Icon 組件，相容最新版 Lucide CDN
+        const Icon = ({ name, className }) => {
+            const iconRef = useRef(null);
+            
+            useEffect(() => {
+                if (window.lucide && iconRef.current) {
+                    // 建立一個臨時容器來生成圖標
+                    const iconName = name.charAt(0).toLowerCase() + name.slice(1);
+                    const iconData = window.lucide.icons[name] || window.lucide.icons[iconName];
+                    
+                    if (iconData) {
+                        // 使用 Lucide 的 createElement 方法來生成 SVG
+                        const svgElement = window.lucide.createElement(iconData);
+                        // 設置樣式類別
+                        if (className) {
+                            className.split(' ').forEach(cls => {
+                                if (cls) svgElement.classList.add(cls);
+                            });
+                        }
+                        // 替換內容
+                        iconRef.current.innerHTML = '';
+                        iconRef.current.appendChild(svgElement);
+                    }
+                }
+            }, [name, className]);
+
+            return <span ref={iconRef} className="inline-flex items-center justify-center" />;
+        };
+
+        const App = () => {
+            const [image, setImage] = useState(null);
+            const [base64Image, setBase64Image] = useState(null);
+            const [loading, setLoading] = useState(false);
+            const [analysis, setAnalysis] = useState(null);
+            const [error, setError] = useState(null);
+            const [generatingImage, setGeneratingImage] = useState(false);
+            const [retryStatus, setRetryStatus] = useState(null);
+            const [aiSampleUrl, setAiSampleUrl] = useState(null);
+            const [loadingText, setLoadingText] = useState("");
+            const fileInputRef = useRef(null);
+            const aiSampleRef = useRef(null);
+
+            const loadingMessages = [
+                "大施正日以繼夜的分析中", "大施正痛不欲生的分析中", "大施正不眠不休的分析中",
+                "大施正隨心所欲的分析中", "大施正快馬加鞭的分析中", "大施正廢寢忘食的分析中",
+                "大施正龜速的分析中", "大施正生無可戀的分析中", "大施正連滾帶爬的分析中",
+                "大施正從從容容的分析中", "大施正萬般無奈的分析中", "大施正心不甘情不願的分析中",
+                "大施正光速的分析中"
+            ];
+
+            const SYSTEM_PROMPT = `你是一位風趣但專業的攝影導師「大施」，負責提供照片構圖分析。
+請嚴格遵守以下規則：
+1. 語氣專業、帶點幽默。
+2. 針對「目前構圖方式」進行分析。
+3. 只能從指定17種構圖法中選擇。
+4. 視覺張力評分 (極端拉大差距模式)：
+   - 範圍 3.5 到 10.0。
+   - 嚴禁中庸分數。專業感 7.5 起跳，平庸壓低至 6.0 以下，最低 3.5。
+5. 專業點評中嚴禁出現「大施」字樣。
+輸出格式：
+構圖分析結果：(僅中文名稱)
+視覺張力評分：(數字)
+專業點評：(內容)
+二次構圖優化方案：(建議)
+視覺處理指令：(英文描述)`;
+
+            const callGemini = async (model, payload, retryCount = 0) => {
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`;
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        if ((response.status === 429 || response.status >= 500) && retryCount < 5) {
+                            const delay = Math.pow(2, retryCount) * 1500;
+                            setRetryStatus(`伺服器忙碌，進行第 ${retryCount + 1} 次重試...`);
+                            await new Promise(resolve => setTimeout(resolve, delay));
+                            return callGemini(model, payload, retryCount + 1);
+                        }
+                        throw new Error(`API Error ${response.status}`);
+                    }
+                    const result = await response.json();
+                    setRetryStatus(null);
+                    return result;
+                } catch (err) {
+                    if (retryCount < 5) {
+                        const delay = Math.pow(2, retryCount) * 1500;
+                        setRetryStatus(`連線異常，重試中 (${retryCount + 1}/5)...`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        return callGemini(model, payload, retryCount + 1);
+                    }
+                    throw err;
+                }
+            };
+
+            const parseAnalysis = (text) => {
+                const cleanSymbols = (str) => str ? str.replace(/[*#|]/g, '').trim() : "";
+                const splitToParagraphs = (str) => {
+                    const cleaned = cleanSymbols(str);
+                    return cleaned ? cleaned.split(/[\n\r]+/).flatMap(p => p.split(/(?<=[。！？])\s*/).filter(s => s.trim().length > 0)) : [];
+                };
+
+                const typeRaw = cleanSymbols(text.match(/構圖分析結果：?([\s\S]+?)(?=視覺張力評分|專業點評|二次構圖|視覺處理|$)/)?.[1]);
+                let types = COMPOSITION_METHODS.filter(method => typeRaw.includes(method));
+                if (types.length === 0) types = typeRaw.split(/[、,，\s]+/).filter(t => t.length > 0);
+
+                const scoreMatch = text.match(/視覺張力評分[:：\s]*(\d+(\.\d)?)/);
+                const score = scoreMatch ? scoreMatch[1] : "3.5";
+
+                return {
+                    typeList: types,
+                    score: score,
+                    comment: splitToParagraphs(text.match(/專業點評：?([\s\S]+?)(?=二次構圖|視覺處理|$)/)?.[1]?.trim()),
+                    guide: splitToParagraphs(text.match(/二次構圖優化方案：?([\s\S]+?)(?=視覺處理|$)/)?.[1]?.trim()),
+                    prompt: text.match(/視覺處理指令：?([\s\S]+?)$/)?.[1]?.trim() || ""
+                };
+            };
+
+            const analyzeComposition = async () => {
+                setLoading(true);
+                setError(null);
+                try {
+                    const data = await callGemini('gemini-2.5-flash-preview-09-2025', {
+                        contents: [{
+                            parts: [
+                                { inlineData: { mimeType: "image/png", data: base64Image } },
+                                { text: "請進行構圖分析，大幅拉開評分差距。" }
+                            ]
+                        }],
+                        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] }
+                    });
+
+                    if (data.candidates?.[0]?.finishReason === "SAFETY") throw new Error("影像內容不符合規範。");
+                    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (text) setAnalysis(parseAnalysis(text));
+                } catch (err) {
+                    setError("分析失敗：" + err.message);
+                } finally {
+                    setLoading(false);
+                    setRetryStatus(null);
+                }
+            };
+
+            const generateIdealCrop = async () => {
+                if (!base64Image || !analysis) return;
+                setGeneratingImage(true);
+                setError(null);
+                try {
+                    const forcedPrompt = `TASK: RE-COMPOSE AND TRANSFORM THIS IMAGE. CROP, ROTATE, AND FOLLOW RULE OF THIRDS. INSTRUCTIONS: ${analysis.guide.join(" ")}. STYLE: ${analysis.prompt}. Output modified image only.`;
+                    
+                    const result = await callGemini('gemini-2.5-flash-image-preview', {
+                        contents: [{
+                            parts: [
+                                { inlineData: { mimeType: "image/png", data: base64Image } },
+                                { text: forcedPrompt }
+                            ]
+                        }],
+                        generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
+                    });
+
+                    const imagePart = result.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+                    if (imagePart?.inlineData?.data) {
+                        setAiSampleUrl(`data:image/png;base64,${imagePart.inlineData.data}`);
+                        setTimeout(() => aiSampleRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+                    } else {
+                        throw new Error("模型未回傳影像。");
+                    }
+                } catch (e) {
+                    setError("生成失敗：" + e.message);
+                } finally {
+                    setGeneratingImage(false);
+                    setRetryStatus(null);
+                }
+            };
+
+            const handleImageUpload = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        setImage(reader.result);
+                        setBase64Image(reader.result.split(',')[1]);
+                        setAnalysis(null);
+                        setAiSampleUrl(null);
+                        setError(null);
+                    };
+                    reader.readAsDataURL(file);
+                }
+            };
+
+            useEffect(() => {
+                if (base64Image) {
+                    setLoadingText(loadingMessages[Math.floor(Math.random() * loadingMessages.length)]);
+                    analyzeComposition();
+                }
+            }, [base64Image]);
+
+            const getRank = (scoreStr) => {
+                const score = parseFloat(scoreStr);
+                if (score >= 9.5) return "你這一生值得了";
+                if (score >= 9.0) return "構圖審美天花板";
+                if (score >= 8.5) return "完美的黃金比例";
+                if (score >= 8.0) return "光影魔術師就是你";
+                if (score >= 7.5) return "美感專業大師";
+                if (score >= 7.0) return "唉呦，不錯喔";
+                if (score >= 6.5) return "這張安全牌打得好";
+                if (score >= 6.0) return "答應我，加油好嗎";
+                if (score >= 5.5) return "你阿嬤都比你會拍";
+                if (score >= 5.0) return "美感絕緣體就是你";
+                if (score >= 4.5) return "視覺系恐怖份子";
+                if (score >= 4.0) return "堪比視覺災難現場";
+                return "我勸你快回火星吧";
+            };
+
+            return (
+                <div className="min-h-screen p-4 md:p-8 flex flex-col items-center">
+                    <header className="max-w-2xl w-full text-center mb-10">
+                        <h1 className="text-3xl md:text-4xl font-black tracking-widest text-white mb-2 italic">攝影構圖大施</h1>
+                        <p className="text-neutral-500 text-xs font-bold tracking-[0.3em]">🚀 拯救糟糕構圖 · 讓照片起死回生</p>
+                    </header>
+
+                    <main className="max-w-5xl w-full grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
+                        <div className="space-y-6">
+                            <div className="bg-neutral-900 border border-neutral-800 rounded-[2.5rem] overflow-hidden shadow-2xl relative">
+                                {!image ? (
+                                    <div onClick={() => fileInputRef.current.click()} className="aspect-[3/4] flex flex-col items-center justify-center p-12 cursor-pointer hover:bg-neutral-800/50 transition-all border-4 border-dashed border-neutral-800 m-4 rounded-[2rem] group">
+                                        <div className="w-20 h-20 text-blue-500 mb-6 group-hover:scale-110 transition-transform"><Icon name="Camera" className="w-full h-full" /></div>
+                                        <div className="text-white font-black text-xl tracking-widest">上傳照片</div>
+                                        <p className="text-neutral-500 text-xs mt-4">大施幫你看看這張還有沒有救</p>
+                                    </div>
+                                ) : (
+                                    <div className="relative">
+                                        <img src={image} className="w-full h-auto block" />
+                                        {loading && (
+                                            <div className="absolute inset-0 bg-black/70 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center">
+                                                <div className="text-blue-500 animate-spin mb-6"><Icon name="RefreshCw" className="w-12 h-12" /></div>
+                                                <p className="text-white font-black tracking-widest text-sm">{retryStatus || loadingText}</p>
+                                            </div>
+                                        )}
+                                        <button onClick={() => {setImage(null); setAnalysis(null);}} className="absolute top-6 right-6 bg-black/50 hover:bg-black p-3 rounded-full backdrop-blur-md border border-white/10 transition-all">
+                                            <Icon name="RefreshCw" className="w-6 h-6 text-white" />
+                                        </button>
+                                    </div>
+                                )}
+                                <input type="file" ref={fileInputRef} onChange={handleImageUpload} className="hidden" accept="image/*" />
+                            </div>
+
+                            {aiSampleUrl && (
+                                <div ref={aiSampleRef} className="bg-neutral-900 border border-blue-900/30 rounded-[2.5rem] overflow-hidden shadow-2xl animate-bounce-in">
+                                    <div className="p-5 bg-blue-950/20 flex items-center justify-between border-b border-blue-900/30">
+                                        <div className="flex items-center gap-3 text-blue-400 font-black text-sm tracking-widest">
+                                            <Icon name="Wand2" className="w-5 h-5" /> 理想構圖參考
+                                        </div>
+                                        <button onClick={() => setAiSampleUrl(null)} className="text-neutral-500 hover:text-white"><Icon name="X" className="w-4 h-4" /></button>
+                                    </div>
+                                    <img src={aiSampleUrl} className="w-full h-auto" />
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="space-y-8">
+                            {analysis && (
+                                <div className="space-y-8 animate-slide-in">
+                                    <div className="bg-white text-black rounded-[2rem] p-8 shadow-2xl border-b-[10px] border-blue-600 flex justify-between items-center">
+                                        <div className="space-y-4">
+                                            <div className="inline-block px-3 py-1 bg-blue-600 text-white font-black text-[10px] rounded uppercase tracking-tighter">Current Composition</div>
+                                            <div className="space-y-1">
+                                                {analysis.typeList.map((t, i) => (
+                                                    <div key={i} className="flex items-center gap-2 font-black text-lg text-neutral-800 tracking-tight">
+                                                        <div className="w-2 h-2 bg-blue-600 rounded-full" /> {t}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <div className="text-right border-l-2 border-neutral-200 pl-8">
+                                            <div className="text-[10px] font-black text-neutral-400 tracking-widest mb-1 uppercase">Score</div>
+                                            <div className="flex items-baseline justify-end">
+                                                <span className="text-6xl font-black text-blue-600 leading-none">{analysis.score}</span>
+                                                <span className="text-xs font-bold text-neutral-400 ml-1">/10</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-neutral-800/50 border border-neutral-700 rounded-[2rem] p-6 flex items-center gap-5 shadow-xl">
+                                        <div className="bg-blue-600 p-4 rounded-2xl shadow-lg shadow-blue-600/20"><Icon name="Award" className="w-8 h-8 text-white" /></div>
+                                        <div>
+                                            <div className="text-[10px] font-bold text-blue-400 tracking-[0.2em] uppercase mb-1">美感等級評定</div>
+                                            <div className="text-xl font-black text-white italic tracking-wide">{getRank(analysis.score)}</div>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-neutral-900 border border-neutral-800 rounded-[2.5rem] p-8 space-y-6 shadow-2xl relative overflow-hidden">
+                                        <div className="flex items-center gap-3 text-blue-500 font-black tracking-widest text-lg border-b border-neutral-800 pb-4 uppercase">
+                                            <Icon name="User" className="w-6 h-6" /> 大施專業點評
+                                        </div>
+                                        <div className="space-y-4 text-neutral-300 leading-relaxed font-medium">
+                                            {analysis.comment.map((p, i) => <p key={i}>{p}</p>)}
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-blue-600 text-white rounded-[2.5rem] p-10 shadow-2xl shadow-blue-600/20 space-y-8 relative overflow-hidden">
+                                        <div className="absolute top-0 right-0 p-10 opacity-10 pointer-events-none"><Icon name="Scissors" className="w-32 h-32" /></div>
+                                        <div className="flex items-center gap-3 font-black tracking-widest text-xl uppercase">
+                                            <Icon name="Layout" className="w-6 h-6" /> 理想構圖建議
+                                        </div>
+                                        <div className="space-y-4 text-blue-50 leading-relaxed font-bold italic">
+                                            {analysis.guide.map((p, i) => <p key={i}>{p}</p>)}
+                                        </div>
+                                        <button 
+                                            onClick={generateIdealCrop} 
+                                            disabled={generatingImage}
+                                            className="w-full bg-white text-blue-600 py-6 rounded-2xl font-black text-sm tracking-[0.2em] flex flex-col items-center justify-center gap-2 hover:bg-neutral-100 transition-all disabled:opacity-50 shadow-xl"
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                {generatingImage ? <Icon name="RefreshCw" className="w-5 h-5 animate-spin" /> : <Icon name="Layers" className="w-5 h-5" />}
+                                                {generatingImage ? "正在努力構圖中..." : "生成理想裁切示意圖"}
+                                            </div>
+                                            {retryStatus && <span className="text-[10px] animate-pulse font-medium">{retryStatus}</span>}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {error && (
+                                <div className="p-6 bg-red-950/30 border border-red-900/50 rounded-3xl flex items-start gap-4 text-red-400 animate-shake">
+                                    <Icon name="AlertCircle" className="w-6 h-6 shrink-0" />
+                                    <p className="text-xs font-bold leading-relaxed">{error}</p>
+                                </div>
+                            )}
+                        </div>
+                    </main>
+
+                    <footer className="mt-20 text-neutral-600 text-[10px] font-black tracking-[0.5em] text-center uppercase">
+                        © 真的大施教你拍美照 ／ 假的大師害你被罵爆
+                    </footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
