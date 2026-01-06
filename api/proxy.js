@@ -20,13 +20,13 @@ export default async function handler(req, res) {
     const { model, payload } = req.body;
     
     // 從環境變數讀取金鑰
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.apiKey;
 
     // --- 環境變數檢查點 ---
     if (!apiKey || apiKey === "undefined") {
         return res.status(500).json({ 
-            error: 'GEMINI_API_KEY is not defined', 
-            message: '伺服器找不到金鑰。請至 Vercel Settings > Environment Variables 設定 GEMINI_API_KEY，並執行 Redeploy。' 
+            error: 'apiKey is not defined', 
+            message: '伺服器找不到金鑰。請至 Vercel Settings > Environment Variables 設定 apiKey，並執行 Redeploy。' 
         });
     }
 
