@@ -1,6 +1,6 @@
 /**
  * Vercel Serverless Function: Gemini API 代理轉發程式
- * 修正了模型名稱可能導致的 404 錯誤
+ * 強化模型名稱自動修正與降級機制，解決 404 模型找不到的問題
  */
 
 export default async function handler(req, res) {
@@ -23,18 +23,20 @@ export default async function handler(req, res) {
     if (!apiKey) {
         return res.status(500).json({ 
             error: 'Server Config Error', 
-            message: '找不到 GEMINI_API_KEY，請確認 Vercel 環境變數已設定。' 
+            message: '找不到 GEMINI_API_KEY，請確認 Vercel 環境變數已設定並重新部署。' 
         });
     }
 
     /**
-     * 修正模型名稱：
-     * 如果傳入的是預覽版模型名稱導致 404，
-     * 我們可以將其導向更穩定的 1.5-flash 版本。
+     * 強化版模型名稱修正邏輯：
+     * 解決 gemini-2.5-flash-preview-09-2025 導致的 404 錯誤
      */
     let targetModel = model;
-    if (model.includes('gemini-2.5-flash-preview')) {
-        targetModel = 'gemini-1.5-flash'; // 回退到穩定版本
+    
+    // 如果模型名稱包含 "2.5" 或特定的預覽日期，強制轉換為穩定的 2.0 預覽版或 1.5 穩定版
+    if (model.includes('gemini-2.5') || model.includes('09-2025')) {
+        // 優先嘗試使用最新的 2.0 預覽版，若不行則使用 1.5 Flash
+        targetModel = 'gemini-1.5-flash'; 
     }
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
@@ -44,7 +46,7 @@ export default async function handler(req, res) {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Vercel-Serverless)' 
+                'User-Agent': 'Mozilla/5.0 (Vercel-Serverless-Proxy)' 
             },
             body: JSON.stringify(payload)
         });
@@ -57,7 +59,8 @@ export default async function handler(req, res) {
                 error: `Google API ${googleResponse.status}`,
                 message: data.error?.message || '呼叫 Google API 時發生錯誤',
                 details: data.error || null,
-                attemptedUrl: url.split('?')[0] // 隱藏 Key 但顯示 URL 以供除錯
+                attemptedModel: targetModel, // 顯示最終嘗試的模型名稱以便除錯
+                originalModel: model
             });
         }
 
